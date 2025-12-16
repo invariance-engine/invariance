@@ -4,8 +4,8 @@ from pydantic import BaseModel, Field, field_validator
 
 
 class GridConfig(BaseModel):
-    nx: int = Field(..., description="Number of grid points in x-direction")
-    ny: int = Field(..., description="Number of grid points in y-direction")
+    nx: int = Field(..., gt=0, description="Number of grid points in x-direction")
+    ny: int = Field(..., gt=0, description="Number of grid points in y-direction")
     dx: float = Field(..., gt=0, description="Grid spacing in x")
     dy: float = Field(..., gt=0, description="Grid spacing in y")
 

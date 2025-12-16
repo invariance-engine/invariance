@@ -8,6 +8,8 @@ from invariance.run.create import create_run_directory
 import typer
 from rich import print
 
+from pydantic import ValidationError
+
 from invariance import __version__
 
 app = typer.Typer(
@@ -56,10 +58,21 @@ def simulate(
     Validate a simulation config and create a run directory.
     (Physics comes in the next milestone.)
     """
-    sim_config = load_simulation_config(config)
-    create_run_directory(out, sim_config)
+    try:
+        sim_config = load_simulation_config(config)
+    except ValidationError as e:
+        typer.echo("Error: Validation failed for simulation config", err=True)
+        typer.echo(e, err=True)
+        raise typer.Exit(code=1)
 
-    typer.echo(f"Run directory created at {out}")
+    try:
+        create_run_directory(out, sim_config)
+    except FileExistsError:
+        typer.echo(f"Error: Output directory already exists: {out}", err=True)
+        raise typer.Exit(code=1)
+
+    typer.echo(f"✔ Loaded simulation config from {config}")
+    typer.echo(f"✔ Created run directory: {out}")
 
 
 def main() -> None:
