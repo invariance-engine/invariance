@@ -21,6 +21,9 @@ from invariance.analysis.residuals import (
     compute_error_metrics,
 )
 
+from invariance.calibration.alpha import calibrate_alpha
+from invariance.data.sensors import load_sensor_data, map_sensors_to_grid
+
 app = typer.Typer(
     name="invariance",
     help="Invariance: auto-calibrated physics (starting with thermal diffusion).",
@@ -201,6 +204,110 @@ def validate(
 
     typer.echo("✔ Sensor validation completed")
     typer.echo(f"RMSE = {metrics['rmse']:.3f}")
+    
+    
+@app.command()
+def calibrate(
+    run: Annotated[
+        Path,
+        typer.Option(
+            "--run",
+            "-r",
+            exists=True,
+            file_okay=False,
+            dir_okay=True,
+            help="Run directory produced by `simulate`",
+        ),
+    ],
+    sensors: Annotated[
+        Path,
+        typer.Option(
+            "--sensors",
+            "-s",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            help="Sensor CSV file",
+        ),
+    ],
+) -> None:
+    """
+    Automatically calibrate thermal diffusivity (alpha).
+    """
+    import json
+    import numpy as np
+
+    # Load run artifacts
+    with (run / "config.json").open() as f:
+        config_dict = json.load(f)
+
+    sim_config = load_simulation_config(run / "config.json")
+
+    sensors_df = load_sensor_data(sensors)
+    sensors_df = map_sensors_to_grid(
+        sensors_df,
+        dx=sim_config.grid.dx,
+        dy=sim_config.grid.dy,
+        nx=sim_config.grid.nx,
+        ny=sim_config.grid.ny,
+    )
+
+    # Initial validation
+    T0 = np.load(run / "history.npy")
+    initial_df = sample_simulation_at_sensors(
+        T0, sensors_df, sim_config.time.dt
+    )
+    rmse_before = float(
+        np.sqrt((initial_df["residual"] ** 2).mean())
+    )
+
+    # Calibrate
+    result = calibrate_alpha(
+        initial_alpha=sim_config.material.alpha,
+        sim_config=sim_config,
+        sensors_df=sensors_df,
+    )
+
+    # Update config
+    sim_config.material.alpha = result["alpha_fitted"]
+
+    # Re-simulate with fitted alpha
+    T1 = simulate_heat_2d(
+        nx=sim_config.grid.nx,
+        ny=sim_config.grid.ny,
+        dx=sim_config.grid.dx,
+        dy=sim_config.grid.dy,
+        dt=sim_config.time.dt,
+        n_steps=sim_config.time.n_steps,
+        alpha=sim_config.material.alpha,
+        initial_temperature=sim_config.initial_temperature,
+        boundary_value=sim_config.boundary.value,
+    )
+
+    fitted_df = sample_simulation_at_sensors(
+        T1, sensors_df, sim_config.time.dt
+    )
+    rmse_after = float(
+        np.sqrt((fitted_df["residual"] ** 2).mean())
+    )
+
+    # Write outputs
+    np.save(run / "field_calibrated.npy", T1[-1])
+
+    with (run / "metrics.json").open("r+") as f:
+        metrics = json.load(f)
+        metrics["calibration"] = {
+            **result,
+            "rmse_before": rmse_before,
+            "rmse_after": rmse_after,
+        }
+        f.seek(0)
+        json.dump(metrics, f, indent=2)
+        f.truncate()
+
+    typer.echo("✔ Calibration completed")
+    typer.echo(f"alpha: {result['alpha_initial']:.4f} → {result['alpha_fitted']:.4f}")
+    typer.echo(f"RMSE:  {rmse_before:.4f} → {rmse_after:.4f}")
 
 
 def main() -> None:
