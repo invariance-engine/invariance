@@ -24,6 +24,8 @@ from invariance.analysis.residuals import (
 from invariance.calibration.alpha import calibrate_alpha
 from invariance.data.sensors import load_sensor_data, map_sensors_to_grid
 
+from invariance.synthetic.generate import generate_synthetic_case
+
 app = typer.Typer(
     name="invariance",
     help="Invariance: auto-calibrated physics (starting with thermal diffusion).",
@@ -308,6 +310,56 @@ def calibrate(
     typer.echo("✔ Calibration completed")
     typer.echo(f"alpha: {result['alpha_initial']:.4f} → {result['alpha_fitted']:.4f}")
     typer.echo(f"RMSE:  {rmse_before:.4f} → {rmse_after:.4f}")
+    
+    
+@app.command()
+def synth(
+    config: Annotated[
+        Path,
+        typer.Option("--config", "-c", exists=True, help="Base simulation config"),
+    ],
+    alpha: Annotated[
+        float,
+        typer.Option("--alpha", help="True thermal diffusivity"),
+    ],
+    n_sensors: Annotated[
+        int,
+        typer.Option("--n-sensors", help="Number of sensors"),
+    ],
+    noise: Annotated[
+        float,
+        typer.Option("--noise", help="Gaussian noise std"),
+    ],
+    out: Annotated[
+        Path,
+        typer.Option("--out", "-o", help="Output directory"),
+    ],
+) -> None:
+    """
+    Generate a synthetic calibration case with known ground truth.
+    """
+    try:
+        sim_config = load_simulation_config(config)
+    except ValidationError as e:
+        typer.echo("Error: invalid simulation config", err=True)
+        raise typer.Exit(code=1) from e
+
+    try:
+        generate_synthetic_case(
+            sim_config=sim_config,
+            true_alpha=alpha,
+            n_sensors=n_sensors,
+            noise_std=noise,
+            out_dir=out,
+        )
+    except FileExistsError:
+        typer.echo(f"Error: output directory exists: {out}", err=True)
+        raise typer.Exit(code=1)
+
+    typer.echo("✔ Synthetic case generated")
+    typer.echo(f"alpha_true = {alpha}")
+    typer.echo(f"sensors    = {n_sensors}")
+    typer.echo(f"noise_std  = {noise}")
 
 
 def main() -> None:

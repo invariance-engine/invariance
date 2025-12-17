@@ -1,0 +1,20 @@
+{
+  "grid": {
+    "nx": 50,
+    "ny": 50,
+    "dx": 0.01,
+    "dy": 0.01
+  },
+  "time": {
+    "dt": 0.0002,
+    "n_steps": 100
+  },
+  "material": {
+    "alpha": 0.07
+  },
+  "boundary": {
+    "type": "dirichlet",
+    "value": 0.0
+  },
+  "initial_temperature": 100.0
+}
